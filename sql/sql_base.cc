@@ -2299,8 +2299,9 @@ static const TABLE_SHARE *find_open_table_share(const Table_ref *tables,
   unsafe even when t2 is not in the query. Whether a table's children are
   affected through their delete rule or their update rule depends on
   whether the action deletes or updates that table's rows. Tables read by
-  other query blocks of the statement, such as subqueries, count as read
-  too, since their reads are interleaved with the scan the same way.
+  other query blocks of the statement, such as subqueries, and tables read
+  by stored routines and triggers the statement invokes count as read too,
+  since their reads are interleaved with the scan the same way.
 
   @param  table       table to be checked (must be updatable base table)
   @param  query_block query block of the DELETE or UPDATE statement
@@ -2317,8 +2318,6 @@ bool fk_actions_affect_queried_table(const Table_ref *table,
   assert(table->table != nullptr);
 
   const Table_ref *all_tables = query_block->parent_lex->query_tables;
-  const Table_ref *first_not_own =
-      query_block->parent_lex->first_not_own_table();
 
   // Depth-first walk over the tables whose rows the statement's referential
   // actions may modify. The bool tracks whether rows of that table get
@@ -2347,11 +2346,14 @@ bool fk_actions_affect_queried_table(const Table_ref *table,
       // A modified child that the statement reads makes immediate
       // modification of the subject table unsafe. Walk the complete table
       // list of the statement, so that tables read by other query blocks
-      // (e.g. subqueries) are seen too, but stop before the tables added by
-      // prelocking, since those are not read by the statement itself.
-      for (const Table_ref *tl = all_tables;
-           tl != nullptr && tl != first_not_own; tl = tl->next_global) {
+      // (e.g. subqueries) and by invoked stored routines and triggers are
+      // seen too. Tables added to the list only for foreign key handling,
+      // marked by open_for_fk_name, are not read by the statement itself
+      // and are skipped.
+      for (const Table_ref *tl = all_tables; tl != nullptr;
+           tl = tl->next_global) {
         if (tl->table == nullptr) continue;  // View or derived table.
+        if (tl->open_for_fk_name != nullptr) continue;
         const TABLE_SHARE *read_share = tl->table->s;
         if (my_strcasecmp(table_alias_charset, read_share->db.str,
                           fk_p->referencing_table_db.str) == 0 &&
