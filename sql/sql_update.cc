@@ -188,8 +188,8 @@ bool Sql_cmd_update::precheck(THD *thd) {
           if (chk(SELECT_ACL)) return true;
         }
       }  // else
-    }  // for
-  }  // else
+    }    // for
+  }      // else
   return false;
 }
 
